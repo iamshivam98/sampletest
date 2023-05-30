@@ -1,0 +1,676 @@
+{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang1033{\fonttbl{\f0\fnil\fcharset0 Calibri;}}
+{\*\generator Riched20 10.0.22621}\viewkind4\uc1 
+\pard\sa200\sl276\slmult1\qc\ul\b\f0\fs32\lang9 Documentation for Custom Potential Duplicate Component\par
+
+\pard\sa200\sl276\slmult1\par
+\ulnone\b0\fs28 In the custom potential duplicate component, we can select multiple records at a time and merge the fields for master records, and can delete the duplicate records.\par
+\par
+So, here is my Step-by-Step implementation which I have followed to achieve this output.\par
+\par
+Step-1: At first I gave matching rules for the Sobject and assigned it to duplicate rules.\par
+Step-2: Then I used the apex class to get the duplicate records from the salesforce dynamically.\par
+Step-3: I am using the wrapper class to get the fields for every Soject in salesforce.\par
+Here Is \b my Apex class \b0 code:\par
+\b Wrapper Class:\par
+\b0 public class DuplicateRecordCountWrapper \{\par
+    @AuraEnabled\par
+    public List<String> fieldsNames \{ get; set; \}\par
+    @AuraEnabled\par
+    public List<sObject> duplicateRecords \{ get; set; \}\par
+\}\par
+\par
+\b Apex Class:\par
+\b0\par
+public class PotentialDuplicateComponentController \{\par
+    @AuraEnabled(cacheable=true)\par
+    public static DuplicateRecordCountWrapper searchPotentialDuplicates(String objectApiName, Id recordId) \{\par
+        DuplicateRecordCountWrapper duplicateReccc= new DuplicateRecordCountWrapper();\par
+\par
+        String SobjectApiName = objectApiName;\par
+        Map<String, Schema.SObjectType> schemaMap = Schema.getGlobalDescribe();\par
+        Map<String, Schema.SObjectField> fieldMap = schemaMap.get(SobjectApiName).getDescribe().fields.getMap();\par
+        List<String>apiNames =  new list<String>();\par
+        Set <String>duplicatefiled =  new Set<String>();\par
+        for(String apiName : fieldMap.keyset())\par
+        \{\par
+            apiNames.add(apiName); \par
+        \}\par
+        list<Id> idss = new List<id>();\par
+        string allFieldString = string.join(apiNames,',');\par
+        system.debug('alll field values' +allFieldString);\par
+        String query = 'SELECT ' + allFieldString + ' FROM ' + SobjectApiName + ' WHERE Id =\\'' + recordId +'\\'';\par
+        List<sObject> sObjectListForDupCheck = Database.query(query);\par
+        System.debug('98' +sObjectListForDupCheck);\par
+        Datacloud.FindDuplicatesResult[] findDupeResults = Datacloud.FindDuplicates.findDuplicates(sObjectListForDupCheck);\par
+        system.debug('7777  '+findDupeResults);\par
+        List<sObject> potentialDuplicates = new List<sObject>();\par
+        List<sObject> potentialDuplicat = new List<sObject>();\par
+        List<sObject> potentialDuplicatt = new List<sObject>();\par
+        for (Datacloud.FindDuplicatesResult findDupeResult : findDupeResults) \{\par
+            system.debug('1  '+findDupeResults);\par
+            for (Datacloud.DuplicateResult dupeResult : findDupeResult.getDuplicateResults()) \{\par
+system.debug('2  '+findDupeResults);\par
+                for (Datacloud.MatchResult matchResult : dupeResult.getMatchResults()) \{\par
+ system.debug('3  '+findDupeResults);\par
+                    for (Datacloud.MatchRecord matchRecord : matchResult.getMatchRecords()) \{\par
+  for(Datacloud.FieldDiff ass :matchRecord.getFieldDiffs())\{ \par
+                            system.debug('6  '+ass.getName());\par
+                            duplicatefiled.add(ass.getName());\par
+                            potentialDuplicat.add((sObject)matchRecord.getRecord());\par
+\tab\tab\tab\tab  \}                        \par
+                    \}   \par
+                \}\par
+            \} \par
+        \}\par
+List<String> duplicatefiledd = new list<String> ();\par
+        duplicatefiledd.addall(duplicatefiled);\par
+        duplicateReccc.fieldsNames=duplicatefiledd;\par
+        System.debug('duplicateReccc.fieldsNames' +duplicateReccc.fieldsNames.size()); \par
+        //if(potentialDuplicatt.isEmpty())\{\par
+        idss.add(recordId);\par
+        for(sObject aa :potentialDuplicat)\{\par
+            idss.add(aa.id); //containing all duplicate and original data ID\par
+        \}\par
+        system.debug('8  '+duplicatefiled);\par
+        string allFields = string.join(duplicateReccc.fieldsNames,',');\par
+        system.debug('9  '+allFields);\par
+List<String> fields = new List<String>(Schema.getGlobalDescribe().get(SobjectApiName).getDescribe().fields.getMap().keySet());\par
+        string querys = 'SELECT ' + String.join(fields, ',') + ' FROM ' + SobjectApiName + ' WHERE Id IN :idss';\par
+        System.debug('fields1' +fields.size());\par
+         System.debug('fields2' +fields);\par
+        List<sObject> sObjectListForDupChecks = Database.query(querys);\par
+        duplicateReccc.duplicateRecords= sObjectListForDupChecks;\par
+        System.debug('25'+duplicateReccc);\par
+        system.debug('377'+duplicateReccc.duplicateRecords);\par
+        return duplicateReccc;  \par
+    \} \par
+       @AuraEnabled(cacheable=true)\par
+    public static List<String> getSObjectFields(String objectApiName) \{\par
+    Map<String, Schema.SObjectType> sobjects = Schema.getGlobalDescribe();\par
+    Schema.SObjectType objectType = sobjects.get(objectApiName);\par
+    List<String> fieldNames = new List<String>();\par
+    if (objectType != null) \{\par
+        Schema.DescribeSObjectResult describeResult = objectType.getDescribe();//gets a Schema.DescribeSObjectResult object for the objectType SObject, which provides metadata information about the SObject.\par
+        for (Schema.SObjectField field : describeResult.fields.getMap().values()) \{//loops through all the fields on the objectType SObject.\par
+            String fieldName = field.getDescribe().getName();//gets the API name of the current field and assigns it to a new String \par
+            if (field.getDescribe().getType() == Schema.DisplayType.COMBOBOX || \par
+                field.getDescribe().getType() == Schema.DisplayType.MULTIPICKLIST) \{// checks if the current field is either a picklist or a multi-select picklist\par
+                // For picklist and multi-select picklist fields, retrieve the picklist values\par
+                Schema.DescribeFieldResult fieldResult = field.getDescribe();\par
+                List<Schema.PicklistEntry> picklistValues = fieldResult.getPicklistValues();\par
+                if (picklistValues != null && !picklistValues.isEmpty()) \{\par
+                    for (Schema.PicklistEntry picklistValue : picklistValues) \{\par
+                        fieldNames.add(fieldName + '.' + picklistValue.getValue());\par
+                    \}\par
+                \}\par
+            \} else \{\par
+                // For all other fields, add the field name to the list\par
+                fieldNames.add(fieldName);\par
+            \}\par
+        \}\par
+    \}\par
+    return fieldNames;\par
+\}\par
+@AuraEnabled\par
+public static void updateMasterRecord(String masterrecId, List<String> fiel,List<String> valu,List<String> recordId) \{\par
+    System.debug('masterrecId: ' + masterrecId);\par
+    System.debug('myObjs: ' + fiel);\par
+    System.debug('valu: ' + valu);\par
+    Id masterrecordId = masterrecId;\par
+    Schema.SObjectType sobjectType = masterrecordId.getSObjectType();\par
+    String objectName = sobjectType.getDescribe().getName();\par
+    SObject ac = Schema.getGlobalDescribe().get(objectName).newSObject();\par
+    Map<String,String> mmap = new Map<String,String>();\par
+    for(Integer i = 0;i<=fiel.size();i++)\{\par
+        for(Integer j = 0 ; j<valu.size();j++)\{\par
+            if(i==j)\{\par
+                ac.put(fiel[i], valu[j]);\par
+            \}\par
+        \}\par
+    \}\par
+    ac.put('Id', masterrecordId);\par
+    System.debug('myObjssst: ' + ac);\par
+\par
+    List<sObject> dss = new List<sObject>();\par
+    dss.add(ac);\par
+    System.debug('myObjsww: ' + dss);\par
+    Database.update(dss);\par
+\par
+    //delete duplicates\par
+    List<Id> duplicateIds = new List<Id>();\par
+    for(String idStr : recordId)\{\par
+        if(idStr != masterrecId)\{\par
+            duplicateIds.add(Id.valueOf(idStr));\par
+         System.debug('recordId' +recordId);\par
+        \}\par
+        \par
+    \}\par
+    deleteDuplicates(duplicateIds);\par
+\}\par
+ \par
+@AuraEnabled\par
+public static void deleteDuplicates(List<Id> duplicateIds) \{\par
+    if(duplicateIds.isEmpty()) return;\par
+    Schema.SObjectType sobjectType = duplicateIds[0].getSObjectType();\par
+    String objectName = sobjectType.getDescribe().getName();\par
+    List<sObject> deleteRecord = new List<sObject>();\par
+    for(Id i : duplicateIds)\{\par
+        SObject ac = Schema.getGlobalDescribe().get(objectName).newSObject();\par
+        ac.put('Id', i);\par
+        deleteRecord.add(ac);\par
+    \}\par
+    Database.delete(deleteRecord);\par
+\}\par
+\}\par
+\par
+Step-4: Now Create an LWC Component and Import all the methods and set the variables accordingly.\par
+\par
+Here is LWC Java Script code:\par
+\par
+import \{ LightningElement, api, wire, track \} from 'lwc'; \par
+import searchPotentialDuplicates from '@salesforce/apex/PotentialDuplicateComponentController.searchPotentialDuplicates'; \par
+import updateMasterRecord from '@salesforce/apex/PotentialDuplicateComponentController.updateMasterRecord'; \par
+import sobjectfields from '@salesforce/apex/PotentialDuplicateComponentController.getSObjectFields'; \par
+import \{ getObjectInfo \} from '@salesforce/apex'; \par
+import \{ ShowToastEvent \} from 'lightning/platformShowToastEvent'; \par
+\par
+\par
+\par
+const columnss = [ \par
+\par
+\{ label: 'API Name', fieldName: 'fieldName' \} \par
+\par
+]; \par
+\par
+export default class PotentialDuplicates extends LightningElement \{ \par
+\par
+@api recordId; \par
+\par
+@api objectApiName; \par
+\par
+@track potentialDuplicates; \par
+\par
+@track count; \par
+\par
+@track isModalOpen = false; \par
+\par
+@track isSecondModalOpen=false; \par
+\par
+@track selectedRowIds = []; \par
+\par
+@track heading; \par
+\par
+@track sobjectName; \par
+\par
+@track DuplicateRecordCountWrapper; \par
+\par
+@track fieldNames = []; \par
+\par
+@track duplicateFieldsnames; \par
+\par
+@track record; \par
+\par
+@track fieldss = []; \par
+\par
+@track fieldInfo = []; \par
+\par
+@track columnss; \par
+\par
+@track dattaa = []; \par
+\par
+@track dataValue = []; \par
+\par
+@track abc = []; \par
+\par
+@track listofrecords = []; \par
+\par
+@track selectedRowIdss; \par
+\par
+@api listOfRecords; \par
+\par
+selectedField = ''; \par
+\par
+@track masterRecordId; \par
+\par
+@track selectedmaster; \par
+\par
+@track listofrecords = []; \par
+\par
+@track selectedvalues= []; \par
+\par
+@track selectedmaster; \par
+\par
+@track myObjs= []; \par
+\par
+@track isThirdModel = false; \par
+\par
+@track getMapdata =[]; \par
+\par
+\par
+\par
+@wire(searchPotentialDuplicates, \{ objectApiName: '$objectApiName', recordId: '$recordId' \}) \par
+\par
+wiredResult(\{ error, data \}) \{ \par
+    if (data) \{ \par
+\par
+        console.log('datat' + data); \par
+\par
+        this.DuplicateRecordCountWrapper = data; \par
+\par
+        console.log('lkjh' + this.DuplicateRecordCountWrapper.duplicateRecords); \par
+\par
+        console.log(\{ data \}); \par
+\par
+\par
+\par
+        this.potentialDuplicates = this.DuplicateRecordCountWrapper.duplicateRecords; \par
+\par
+\par
+\par
+        this.duplicateFieldsnames = this.DuplicateRecordCountWrapper.fieldsNames; \par
+\par
+\par
+\par
+        this.count = this.potentialDuplicates.length - 1; \par
+\par
+        this.error = undefined; \par
+\par
+        // set selected row as default \par
+\par
+        const currentRecord = this.potentialDuplicates.find(record => record.Id === this.recordId); \par
+\par
+        if (currentRecord) \{ \par
+\par
+            this.selectedRowIds = [currentRecord.Id]; \par
+\par
+            \par
+\par
+        \} \par
+\par
+    \} else if (error) \{ \par
+\par
+        this.error = error; \par
+\par
+        this.potentialDuplicates = undefined; \par
+\par
+\par
+\par
+    \} \par
+\par
+\} \par
+\par
+\par
+\par
+get columns() \{ \par
+\par
+\par
+\par
+    if (this.potentialDuplicates && this.potentialDuplicates.length > 0) \{ \par
+\par
+\par
+\par
+        const fieldNames = Object.keys(this.potentialDuplicates[0]) \par
+\par
+            .filter(fieldName => fieldName != 'Id' && this.duplicateFieldsnames.includes(fieldName)); \par
+\par
+        console.log('FIELDS' + fieldNames); \par
+\par
+\par
+\par
+        return [ \par
+\par
+            ...fieldNames.map(fieldName => \{ \par
+\par
+                return \{ \par
+\par
+                    // if(duplicateFieldsnames.includes(fieldName))\{ \par
+\par
+                    label: fieldName, \par
+\par
+                    fieldName: fieldName \par
+\par
+                    //\} \par
+\par
+                \}; \par
+\par
+            \}) \par
+\par
+        ]; \par
+\par
+    \} \par
+\par
+    return []; \par
+\par
+\} \par
+\par
+\par
+\par
+openModal() \{ \par
+\par
+    this.isModalOpen = true; \par
+\par
+    console.log('ffff' + this.potentialDuplicates); \par
+\par
+    console.log('fhjkl' + columns); \par
+\par
+\par
+\par
+\} \par
+\par
+\par
+\par
+closeModal() \{ \par
+\par
+    this.isModalOpen = false; \par
+\par
+\} \par
+\par
+closeSecModal() \{ \par
+\par
+    this.isSecondModalOpen = false; \par
+\par
+    this.isThirdModel = false; \par
+\par
+\} \par
+\par
+\par
+@track isNotSelectedRow = true;\par
+handleRowSelection(event) \{  \par
+\par
+    const selectedRows = event.detail.selectedRows; \par
+\par
+    \par
+\par
+    this.selectedRowIds = selectedRows.map(row => row.Id); \par
+\par
+    console.log('67'+this.selectedRowIds); \par
+\par
+    const recordIds = selectedRows.map(row => row.Id); \par
+\par
+    this.selectedRowIdss= recordIds; \par
+\par
+    if(this.selectedRowIdss.length != 1 || this.selectedRowIdss.length != 0)\{\par
+        this.isNotSelectedRow = false;\par
+    \}\par
+    else\{\par
+        this.isNotSelectedRow = true;\par
+\par
+    \}\par
+\par
+    console.log('68'+this.selectedRowIdss); \par
+\par
+    console.log("Selected Record Ids: ", recordIds); \par
+\par
+\} \par
+\par
+\par
+\par
+\par
+handleNext() \{ \par
+\par
+    this.selectedDuplicates = this.potentialDuplicates.filter(record => this.selectedRowIds.includes(record.Id)); \par
+\par
+    console.log('106 ' + this.selectedRowIds); \par
+\par
+    console.log('107 ' + this.selectedDuplicates); \par
+\par
+    this.isModalOpen = false; // hide the first modal \par
+\par
+    this.isSecondModalOpen = true; // show the second modal \par
+\par
+    console.log(this.objectApiName + '  ==  This  --  ' + this.recordId); \par
+\par
+    this.displayData(); \par
+\par
+    this.selectedRowIdss = this.selectedRowIds; \par
+\par
+    console.log('isSecondModalOpen' +this.isSecondModalOpen); \par
+\par
+    console.log('  isModalOpen' + this.isModalOpen); \par
+\par
+\} \par
+\par
+handlePrevious() \{ \par
+\par
+    this.isSecondModalOpen = false; \par
+\par
+    this.isModalOpen = true; \par
+\par
+    this.listofrecords=[]; \par
+\par
+\} \par
+\par
+connectedCallback() \{ \par
+\par
+    this.sobjectName = this.objectApiName.charAt(0).toUpperCase() + this.objectApiName.slice(1); \par
+\par
+    this.heading = `Potential Duplicate $\{this.sobjectName\} Records`; \par
+\par
+\} \par
+\par
+\par
+\par
+@wire(sobjectfields, \{ objectApiName: '$objectApiName' \}) \par
+\par
+wiredFields(\{ error, data \}) \{ \par
+\par
+    if (data) \{ \par
+\par
+        this.fieldss = data; \par
+\par
+        console.log('Fields:', data); \par
+\par
+        console.log('this.fieldss' +JSON.stringify(this.fieldss)); \par
+\par
+    \} else if (error) \{ \par
+\par
+        console.error(error); \par
+\par
+\par
+\par
+    \} \par
+\par
+\} \par
+\par
+\par
+\par
+displayData() \{ \par
+\par
+        \par
+\par
+    var keyItem = this.fieldss; \par
+\par
+\par
+\par
+    // for (let fieldName in this.selectedDuplicates[1]) \{ \par
+\par
+    //     keyItem.push(fieldName); \par
+\par
+    //     console.log('keyItem' +keyItem); \par
+\par
+    //     console.log('this.selectedDuplicates[0]' +JSON.stringify(this.selectedDuplicates[1])); \par
+\par
+    // \} \par
+\par
+\par
+\par
+        \par
+\par
+    for(var item in keyItem)\{ \par
+\par
+        var fieldvalues = []; \par
+\par
+        var value = keyItem[item]; \par
+\par
+        console.log('value' +value); \par
+\par
+        \par
+\par
+\par
+\par
+        for(var entry in this.selectedDuplicates)\{ \par
+\par
+            console.log('entry' +entry); \par
+\par
+            \par
+\par
+                \par
+\par
+            var fieldvalue1 = this.selectedDuplicates[entry][value]; \par
+\par
+            if(!fieldvalue1)\{ \par
+\par
+                fieldvalue1 = 'NA'; \par
+\par
+            \} \par
+\par
+            fieldvalues.push(fieldvalue1); \par
+\par
+// When fields value and name are null or empty string then the code is failing so we are checking null and empty and assigning value it to NA               \par
+\par
+        \} \par
+\par
+        console.log('fieldvalues' +fieldvalues); \par
+\par
+        this.listofrecords.push(\{value, fieldvalues\}); \par
+\par
+    \} \par
+\par
+console.log('selectedDuplicates' +this.selectedDuplicates); \par
+\par
+    console.log('listofcount' + this.listofrecords.count); \par
+\par
+    console.log('listofrecords' + this.listofrecords); \par
+\par
+    console.log('listofrecords' + JSON.stringify(this.listofrecords)); \par
+\par
+    //this.isSecondModalOpen = true; \par
+\par
+    \par
+\par
+\} \par
+\par
+\par
+\par
+\par
+\par
+masterrecId(event) \{ \par
+\par
+this.selectedmaster = event.target.value; \par
+\par
+this.masterRecordId = this.selectedmaster; \par
+\par
+console.log('selectedmaster: ' + this.selectedmaster); \par
+\par
+console.log('selected master: ' + JSON.stringify(this.masterrecord)); \par
+\par
+console.log('selectedMasterRecord: ' + JSON.stringify(this.selectedMasterRecord));  \par
+\par
+\} \par
+\par
+\par
+\par
+@track selectedvalues; \par
+\par
+@track sfield=[]; \par
+\par
+@track svalue=[]; \par
+\par
+handleRadioChange(event)\{ \par
+\par
+console.log('this is values' ); \par
+\par
+this.selectedvalues = event.target.value;  \par
+\par
+console.log('fieldff' +event.target.name); \par
+\par
+console.log('this.selectedvalues' +event.target.value); \par
+\par
+\par
+\par
+this.sfield.push(event.target.name ); \par
+\par
+this.svalue.push(event.target.value); \par
+\par
+\par
+\par
+\par
+\par
+var myObj = \{ \par
+\par
+fieldName : event.target.name, \par
+\par
+fieldValue : event.target.value \par
+\par
+    \par
+\par
+\}; \par
+\par
+\par
+\par
+console.log('uij '+this.ss); \par
+\par
+console.log('myobj' +myObj.fieldName + myObj.fieldValue); \par
+\par
+this.myObjs.push(myObj); \par
+\par
+//this.getMapdata.push(event.target.name,event.target.value); \par
+console.log('myobjvalues' +JSON.stringify(this.myObjs)); \par
+\} \par
+handlenaxt1()\{ \par
+\par
+console.log('myobjvalue' +JSON.stringify(this.myObjs)); \par
+\par
+console.log('ioio '+JSON.stringify(this.myObjs).fieldName); \par
+\par
+this.isThirdModel = true; \par
+\par
+this.isSecondModalOpen = false; \par
+\par
+this.getMapdata.push(this.selectedmaster); \par
+\par
+console.log('73hyfo '+ JSON.stringify(this.getMapdata)); \par
+\par
+console.log('yyy '+ this.objectApiName); \par
+\par
+//this.ss.push(myObjs.fieldName, myObjs.fieldValue); \par
+\par
+console.log('ioia '+this.ss); \par
+\par
+\} \par
+\par
+handlemerge() \{   \par
+\par
+console.log('merge is called '); \par
+\par
+updateMasterRecord(\{masterrecId :this.selectedmaster, fiel:this.sfield,valu:this.svalue,recordId:this.selectedRowIds\}) \par
+\par
+.then(result => \{ \par
+\par
+    console.log(result); \par
+\par
+    const evt = new ShowToastEvent(\{ title:"Success", message: "Successful", variant: 'success' \}); this.dispatchEvent(evt); \par
+\par
+    // Handle success \par
+    this.isThirdModel = false;\par
+\par
+\}) \par
+\par
+.catch(error => \{ \par
+\par
+    console.log(error); \par
+\par
+    const evt = new ShowToastEvent(\{ title: "Error", message: error, variant: 'error'\}); this.dispatchEvent(evt); \par
+\par
+    // Handle error \par
+\par
+\}); \par
+\par
+\} \par
+\} \par
+\par
+\par
+\par
+\fs22\par
+}
+ 
